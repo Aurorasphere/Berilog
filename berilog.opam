@@ -1,0 +1,13 @@
+opam-version: "2.0"
+synopsis: "Berilog transpiler"
+description: "Minimal OCaml transpiler from .b to .sv"
+maintainer: ""
+authors: ""
+license: "GPL-3.0-or-later"
+depends: [
+  "ocaml" {>= "5.4"}
+  "dune" {>= "3.22"}
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
