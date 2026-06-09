@@ -1,4 +1,10 @@
 _build/
+*.cmi
+*.cmo
+*.cmx
+*.cmxa
+*.o
+*.a
 
 node_modules/
 build/
