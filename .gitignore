@@ -1,0 +1,11 @@
+_build/
+
+node_modules/
+build/
+dist/
+
+examples/out/
+
+*.vsix
+
+.DS_Store
