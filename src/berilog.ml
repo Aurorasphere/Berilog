@@ -2,6 +2,7 @@ open Printf
 
 type frame =
   | Block of string
+  | Literal
 
 let is_space = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -65,7 +66,7 @@ let classify_header header =
   | "initial" | "final" -> Block "end", " begin"
   | _ -> Block "end", " begin"
   end
-  | None -> Block "end", " begin"
+  | None -> Literal, "{"
 
 let read_string input start =
   let len = String.length input in
@@ -187,6 +188,7 @@ let transpile input =
     end else if input.[i] = '}' then begin
       begin match Stack.pop stack with
       | Block close -> Buffer.add_string out close
+      | Literal -> Buffer.add_char out '}'
       end;
       Buffer.clear header;
       loop (i + 1)
@@ -256,7 +258,7 @@ let write_output cli output =
 let run () =
   let cli = parse_args () in
   let input = read_input cli in
-  let output = transpile input in
+  let output = "// Auto-generated with Aurorasphere's Berilog transcompiler\n" ^ transpile input in
   write_output cli output
 
 let () =
