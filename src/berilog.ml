@@ -14,6 +14,11 @@ let is_ident_char = function
 
 let trim = String.trim
 
+let ends_with_colon s =
+  let trimmed = trim s in
+  let len = String.length trimmed in
+  len > 0 && trimmed.[len - 1] = ':'
+
 let supported_keyword = function
   | "module" | "interface" | "package" | "program" | "function" | "task"
   | "class" | "clocking" | "checker" | "covergroup" | "sequence" | "randsequence" | "property"
@@ -67,6 +72,12 @@ let classify_header header =
   | _ -> Block "end", " begin"
   end
   | None -> Literal, "{"
+
+let top_is_endcase stack =
+  not (Stack.is_empty stack) &&
+  match Stack.top stack with
+  | Block "endcase" -> true
+  | _ -> false
 
 let read_string input start =
   let len = String.length input in
@@ -180,7 +191,15 @@ let transpile input =
       Buffer.clear header;
       loop next_i
     end else if input.[i] = '{' then begin
-      let frame, replacement = classify_header (Buffer.contents header) in
+      let frame, replacement =
+        let current_header = Buffer.contents header in
+        if ends_with_colon current_header then
+          (Block "end", " begin")
+        else if top_is_endcase stack then
+          (Block "end", " begin")
+        else
+          classify_header current_header
+      in
       Stack.push frame stack;
       Buffer.add_string out replacement;
       Buffer.clear header;

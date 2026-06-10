@@ -27,3 +27,19 @@
   always_comb  begin
     foo = 1'b1;
   end
+
+  $ ../src/berilog.exe <<'EOF'
+  > case (state) {
+  >   FETCH_A_ADDR: {
+  >     address <= pc;
+  >   }
+  >   default: foo();
+  > }
+  > EOF
+  // Auto-generated with Aurorasphere's Berilog transcompiler
+  case (state) 
+    FETCH_A_ADDR:  begin
+      address <= pc;
+    end
+    default: foo();
+  endcase
