@@ -173,10 +173,13 @@ let transpile input =
   let out = Buffer.create (len * 2) in
   let header = Buffer.create 128 in
   let stack = Stack.create () in
+  let header_paren_depth = ref 0 in
   let push_regular c =
+    if c = '(' then incr header_paren_depth;
+    if c = ')' && !header_paren_depth > 0 then decr header_paren_depth;
     Buffer.add_char header c;
     Buffer.add_char out c;
-    if c = ';' then Buffer.clear header
+    if c = ';' && !header_paren_depth = 0 then Buffer.clear header
   in
   let rec loop i line =
     if i >= len then ()

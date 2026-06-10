@@ -44,6 +44,16 @@
     default: foo();
   endcase
 
+  $ ../src/berilog.exe <<'EOF'
+  > for (int i = 0; i < 4; i++) {
+  >   foo[i] = 1'b0;
+  > }
+  > EOF
+  // Auto-generated with Aurorasphere's Berilog transcompiler
+  for (int i = 0; i < 4; i++)  begin
+    foo[i] = 1'b0;
+  end
+
   $ ../src/berilog.exe <<'EOF' 2>&1
   > always_comb {
   >   foo = ${bar;
