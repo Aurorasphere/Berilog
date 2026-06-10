@@ -2,3 +2,8 @@
  (name berilog)
  (public_name berilog)
  (libraries unix))
+
+(rule
+ (target berilog)
+ (deps berilog.exe)
+ (action (copy %{deps} %{target})))

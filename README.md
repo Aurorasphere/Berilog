@@ -2,6 +2,7 @@
 Brace+Verilog, very lightweight transpiler that maps brace-based block syntax to SystemVerilog.
 
 ## Build
+This process requires [Dune](https://github.com/ocaml/dune)
 ```bash
 git clone https://github.com/Aurorasphere/berilog.git
 cd berilog
@@ -13,10 +14,10 @@ Sorry. but i'm too lazy to make tons of version of executable binary. I mean, if
 
 ## Usage
 ```bash
-./_build/default/src/berilog.exe input.b > output.sv
-./_build/default/src/berilog.exe input.b -o output.sv
-./_build/default/src/berilog.exe input.b -o build/
-./_build/default/src/berilog.exe -o output.sv < input.b
+./_build/default/src/berilog input.b > output.sv
+./_build/default/src/berilog input.b -o output.sv
+./_build/default/src/berilog input.b -o build/
+./_build/default/src/berilog -o output.sv < input.b
 ```
 
 If no input file is given and stdin is an interactive terminal, `berilog` exits with usage text instead of waiting forever.

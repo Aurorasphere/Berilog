@@ -43,3 +43,11 @@
     end
     default: foo();
   endcase
+
+  $ ../src/berilog.exe <<'EOF' 2>&1
+  > always_comb {
+  >   foo = ${bar;
+  > }
+  > EOF
+  berilog: line 3: missing repeated concat expression
+  [1]

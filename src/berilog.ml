@@ -1,8 +1,10 @@
 open Printf
 
+exception Transpile_error of int * string
+
 type frame =
-  | Block of string
-  | Literal
+  | Block of string * int
+  | Literal of int
 
 let is_space = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -49,35 +51,37 @@ let last_supported_keyword header =
 let classify_header header =
   match last_supported_keyword header with
   | Some keyword -> begin match keyword with
-  | "module" -> Block "endmodule", ";"
-  | "interface" -> Block "endinterface", ";"
-  | "package" -> Block "endpackage", ";"
-  | "program" -> Block "endprogram", ";"
-  | "function" -> Block "endfunction", ";"
-  | "task" -> Block "endtask", ";"
-  | "class" -> Block "endclass", ";"
-  | "clocking" -> Block "endclocking", ";"
-  | "checker" -> Block "endchecker", ";"
-  | "covergroup" -> Block "endgroup", ";"
-  | "sequence" | "randsequence" -> Block "endsequence", ";"
-  | "property" -> Block "endproperty", ";"
-  | "primitive" -> Block "endprimitive", ""
-  | "config" -> Block "endconfig", ""
-  | "case" | "casex" | "casez" -> Block "endcase", ""
-  | "generate" -> Block "endgenerate", ""
-  | "specify" -> Block "endspecify", ""
+  | "module" -> "endmodule", ";"
+  | "interface" -> "endinterface", ";"
+  | "package" -> "endpackage", ";"
+  | "program" -> "endprogram", ";"
+  | "function" -> "endfunction", ";"
+  | "task" -> "endtask", ";"
+  | "class" -> "endclass", ";"
+  | "clocking" -> "endclocking", ";"
+  | "checker" -> "endchecker", ";"
+  | "covergroup" -> "endgroup", ";"
+  | "sequence" | "randsequence" -> "endsequence", ";"
+  | "property" -> "endproperty", ";"
+  | "primitive" -> "endprimitive", ""
+  | "config" -> "endconfig", ""
+  | "case" | "casex" | "casez" -> "endcase", ""
+  | "generate" -> "endgenerate", ""
+  | "specify" -> "endspecify", ""
   | "if" | "else" | "for" | "while" | "do" | "repeat" | "forever"
   | "always" | "always_comb" | "always_ff" | "always_latch"
-  | "initial" | "final" -> Block "end", " begin"
-  | _ -> Block "end", " begin"
+  | "initial" | "final" -> "end", " begin"
+  | _ -> "end", " begin"
   end
-  | None -> Literal, "{"
+  | None -> "", "{"
 
 let top_is_endcase stack =
   not (Stack.is_empty stack) &&
   match Stack.top stack with
-  | Block "endcase" -> true
+  | Block ("endcase", _) -> true
   | _ -> false
+
+let bump_line line c = if c = '\n' then line + 1 else line
 
 let read_string input start =
   let len = String.length input in
@@ -118,7 +122,7 @@ let read_block_comment input start =
   if !i + 1 < len then Buffer.add_string out "*/";
   (min len (!i + 2), Buffer.contents out)
 
-let rec parse_concat input start =
+let rec parse_concat input start line0 =
   let len = String.length input in
   let out = Buffer.create 64 in
   let split = ref None in
@@ -127,39 +131,42 @@ let rec parse_concat input start =
     | None -> Buffer.add_char out c
     | Some rhs -> Buffer.add_char rhs c
   in
-  let rec loop i =
-    if i >= len then failwith "unterminated concat"
+  let rec loop i line =
+    if i >= len then raise (Transpile_error (line0, "unterminated ${...} concat"))
     else if input.[i] = '}' then
       let left = trim (Buffer.contents out) in
       begin match !split with
-      | None -> (i + 1, "{" ^ left ^ "}")
-      | Some rhs -> (i + 1, "{" ^ left ^ "{" ^ trim (Buffer.contents rhs) ^ "}}")
+      | None -> (i + 1, line, "{" ^ left ^ "}")
+      | Some rhs ->
+          let rhs_text = trim (Buffer.contents rhs) in
+          if rhs_text = "" then raise (Transpile_error (line, "missing repeated concat expression"));
+          (i + 1, line, "{" ^ left ^ "{" ^ rhs_text ^ "}}")
       end
     else if i + 1 < len && input.[i] = '$' && input.[i + 1] = '{' then begin
-      let next_i, nested = parse_concat input (i + 2) in
+      let next_i, next_line, nested = parse_concat input (i + 2) line in
       Buffer.add_string (match !split with None -> out | Some rhs -> rhs) nested;
-      loop next_i
+      loop next_i next_line
     end else if i + 1 < len && input.[i] = '/' && input.[i + 1] = '/' then begin
       let next_i, comment = read_line_comment input i in
       Buffer.add_string (match !split with None -> out | Some rhs -> rhs) comment;
-      loop next_i
+      loop next_i (String.fold_left bump_line line comment)
     end else if i + 1 < len && input.[i] = '/' && input.[i + 1] = '*' then begin
       let next_i, comment = read_block_comment input i in
       Buffer.add_string (match !split with None -> out | Some rhs -> rhs) comment;
-      loop next_i
+      loop next_i (String.fold_left bump_line line comment)
     end else if input.[i] = '"' then begin
       let next_i, str = read_string input i in
       Buffer.add_string (match !split with None -> out | Some rhs -> rhs) str;
-      loop next_i
+      loop next_i (String.fold_left bump_line line str)
     end else if input.[i] = ';' && Option.is_none !split then begin
       split := Some (Buffer.create 32);
-      loop (i + 1)
+      loop (i + 1) line
     end else begin
       add_char input.[i];
-      loop (i + 1)
+      loop (i + 1) (bump_line line input.[i])
     end
   in
-  loop start
+  loop start line0
 
 let transpile input =
   let len = String.length input in
@@ -171,54 +178,61 @@ let transpile input =
     Buffer.add_char out c;
     if c = ';' then Buffer.clear header
   in
-  let rec loop i =
+  let rec loop i line =
     if i >= len then ()
     else if i + 1 < len && input.[i] = '/' && input.[i + 1] = '/' then begin
       let next_i, comment = read_line_comment input i in
       Buffer.add_string out comment;
-      loop next_i
+      loop next_i (String.fold_left bump_line line comment)
     end else if i + 1 < len && input.[i] = '/' && input.[i + 1] = '*' then begin
       let next_i, comment = read_block_comment input i in
       Buffer.add_string out comment;
-      loop next_i
+      loop next_i (String.fold_left bump_line line comment)
     end else if input.[i] = '"' then begin
       let next_i, str = read_string input i in
       Buffer.add_string out str;
-      loop next_i
+      loop next_i (String.fold_left bump_line line str)
     end else if i + 1 < len && input.[i] = '$' && input.[i + 1] = '{' then begin
-      let next_i, concat = parse_concat input (i + 2) in
+      let next_i, next_line, concat = parse_concat input (i + 2) line in
       Buffer.add_string out concat;
       Buffer.clear header;
-      loop next_i
+      loop next_i next_line
     end else if input.[i] = '{' then begin
       let frame, replacement =
         let current_header = Buffer.contents header in
         if ends_with_colon current_header then
-          (Block "end", " begin")
+          (Block ("end", line), " begin")
         else if top_is_endcase stack then
-          (Block "end", " begin")
-        else
-          classify_header current_header
+          (Block ("end", line), " begin")
+        else begin
+          let close, text = classify_header current_header in
+          if close = "" then (Literal line, text) else (Block (close, line), text)
+        end
       in
       Stack.push frame stack;
       Buffer.add_string out replacement;
       Buffer.clear header;
-      loop (i + 1)
+      loop (i + 1) line
     end else if input.[i] = '}' then begin
+      if Stack.is_empty stack then raise (Transpile_error (line, "unexpected }"));
       begin match Stack.pop stack with
-      | Block close -> Buffer.add_string out close
-      | Literal -> Buffer.add_char out '}'
+      | Block (close, _) -> Buffer.add_string out close
+      | Literal _ -> Buffer.add_char out '}'
       end;
       Buffer.clear header;
-      loop (i + 1)
+      loop (i + 1) line
     end else begin
       let c = input.[i] in
       push_regular c;
-      loop (i + 1)
+      loop (i + 1) (bump_line line c)
     end
   in
-  loop 0;
-  if not (Stack.is_empty stack) then failwith "unbalanced Berilog delimiters";
+  loop 0 1;
+  if not (Stack.is_empty stack) then (
+    match Stack.top stack with
+    | Block (_, open_line)
+    | Literal open_line -> raise (Transpile_error (open_line, "unbalanced Berilog delimiters"))
+  );
   Buffer.contents out
 
 let read_all ic = In_channel.input_all ic
@@ -282,7 +296,12 @@ let run () =
 
 let () =
   try run () with
-  | Stack.Empty
+  | Transpile_error (line, message) ->
+      eprintf "berilog: line %d: %s\n" line message;
+      exit 1
+  | Stack.Empty ->
+      eprintf "berilog: internal stack error\n";
+      exit 1
   | Failure _ as exn ->
       eprintf "berilog: %s\n" (Printexc.to_string exn);
       exit 1
